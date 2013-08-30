@@ -182,7 +182,7 @@ func resizeRect(rect image.Rectangle, aspect float64) image.Rectangle {
 	// Upper bound is not inclusive.
 	xmin, xmax := round(x-w/2), round(x+w/2)+1
 	ymin, ymax := round(y-h/2), round(y+h/2)+1
-	return image.Rect(xmin, xmax, ymin, ymax)
+	return image.Rect(xmin, ymin, xmax, ymax)
 }
 
 func round(x float64) int {
