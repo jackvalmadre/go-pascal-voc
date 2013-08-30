@@ -9,10 +9,17 @@ import (
 //
 // Looks in <dir>/ImageSets/Main/<set>.txt.
 //
-// The set can either be simply "train", "val" or "trainval",
-// or it can be "<class>_<set>", for example "horse_val".
-func Images(dir, set string) ([]string, error) {
-	lines, err := loadLines(path.Join(dir, "ImageSets", "Main", set+".txt"))
+// The class can be either a class name or "*".
+// The set can be either "train", "val" or "trainval".
+func Images(dir, class, set string) ([]string, error) {
+	var name string
+	if class == "*" {
+		name = set
+	} else {
+		name = class + "_" + set
+	}
+
+	lines, err := loadLines(path.Join(dir, "ImageSets", "Main", name+".txt"))
 	if err != nil {
 		return nil, err
 	}
@@ -33,7 +40,7 @@ func Images(dir, set string) ([]string, error) {
 
 // Returns <dir>/JPEGImages/<img>.jpg.
 func ImageFile(dir, img string) string {
-	return path.Join(dir, "JPEGImages", img+".txt")
+	return path.Join(dir, "JPEGImages", img+".jpg")
 }
 
 func intPtrToBool(x *int) *bool {
