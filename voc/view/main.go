@@ -49,6 +49,11 @@ func main() {
 		log.Fatalln("could not load list of images:", err)
 	}
 
+	// Trim difficult, occluded or truncated examples.
+	var n int
+	imgset, n = removeDifficult(imgset)
+	log.Println("removed", n, "windows: difficult")
+
 	// Get image sizes.
 	log.Println("get size of images")
 	sizes := make(map[string]image.Point, len(imgset))
@@ -82,7 +87,11 @@ func main() {
 	// Clone and resize the bounding boxes.
 	imgset = resizeImageSet(imgset, aspect)
 	// Remove any boxes which don't fit.
-	imgset, _ = removeNotInside(imgset, sizes)
+	imgset, n = removeNotInside(imgset, sizes)
+	log.Println("removed", n, "windows: outside image")
+	// Remove boxes which are significantly smaller than the window size.
+	imgset, n = removeSmall(imgset, image.Pt(width/2, height/2))
+	log.Println("removed", n, "windows: too small")
 
 	log.Printf("sample and save images")
 	// Extract windows from images.
@@ -152,6 +161,7 @@ func saveImage(img image.Image, filename string) error {
 	return png.Encode(file, img)
 }
 
+// Map.
 func resizeImageSet(set map[string][]voc.Object, aspect float64) map[string][]voc.Object {
 	dstSet := make(map[string][]voc.Object, len(set))
 	for name, objs := range set {
@@ -189,6 +199,7 @@ func round(x float64) int {
 	return int(math.Floor(x + 0.5))
 }
 
+// Filter.
 func removeNotInside(set map[string][]voc.Object, sizes map[string]image.Point) (map[string][]voc.Object, int) {
 	dstSet := make(map[string][]voc.Object, len(set))
 	var removed int
@@ -198,6 +209,56 @@ func removeNotInside(set map[string][]voc.Object, sizes map[string]image.Point) 
 		for _, obj := range objs {
 			if !obj.Region.In(img) {
 				// Remove the object if it's not inside.
+				removed++
+				continue
+			}
+			dstObjs = append(dstObjs, obj)
+		}
+		// Remove the image if it no longer has any objects.
+		if len(dstObjs) > 0 {
+			dstSet[name] = dstObjs
+		}
+	}
+	return dstSet, removed
+}
+
+// Filter.
+func removeSmall(set map[string][]voc.Object, size image.Point) (map[string][]voc.Object, int) {
+	dstSet := make(map[string][]voc.Object, len(set))
+	var removed int
+	for name, objs := range set {
+		var dstObjs []voc.Object
+		for _, obj := range objs {
+			if obj.Region.Dx() < size.X || obj.Region.Dy() < size.Y {
+				removed++
+				continue
+			}
+			dstObjs = append(dstObjs, obj)
+		}
+		// Remove the image if it no longer has any objects.
+		if len(dstObjs) > 0 {
+			dstSet[name] = dstObjs
+		}
+	}
+	return dstSet, removed
+}
+
+// Filter.
+func removeDifficult(set map[string][]voc.Object) (map[string][]voc.Object, int) {
+	dstSet := make(map[string][]voc.Object, len(set))
+	var removed int
+	for name, objs := range set {
+		var dstObjs []voc.Object
+		for _, obj := range objs {
+			if obj.Occluded != nil && *obj.Occluded {
+				removed++
+				continue
+			}
+			if obj.Truncated != nil && *obj.Truncated {
+				removed++
+				continue
+			}
+			if obj.Difficult != nil && *obj.Difficult {
 				removed++
 				continue
 			}

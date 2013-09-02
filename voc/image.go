@@ -47,6 +47,6 @@ func intPtrToBool(x *int) *bool {
 	if x == nil {
 		return nil
 	}
-	y := *x == 0
+	y := *x != 0
 	return &y
 }
