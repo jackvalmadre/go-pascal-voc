@@ -13,52 +13,89 @@ import (
 	"log"
 	"math"
 	"os"
+	"path"
+	"strings"
 )
 
 func usage() {
 	fmt.Fprintf(os.Stderr, "usage of %s:\n", os.Args[0])
-	fmt.Fprintln(os.Stderr, os.Args[0], "dir class set")
+	fmt.Fprintln(os.Stderr, os.Args[0], "[flags] dir classes sets")
 	flag.PrintDefaults()
-}
-
-var (
-	numPixels int
-)
-
-func init() {
-	flag.Usage = usage
-	flag.IntVar(&numPixels, "pixels", 100*100, "Rough number of pixels in window")
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, `dir -- Pascal VOC root directory (usually e.g. VOC2012)`)
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, `classes -- Comma-separated list of classes`)
+	fmt.Fprintln(os.Stderr, `  e.g. "person,horse,tvmonitor"`)
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, `sets -- Comma-separated list of sets`)
+	fmt.Fprintln(os.Stderr, `  e.g. "train,val"`)
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, `Makes a directory ./<class>-<set>/ containing images.`)
+	fmt.Fprintln(os.Stderr, `Creates a file ./<class>-<set>.txt with a list of these images.`)
+	fmt.Fprintln(os.Stderr)
 }
 
 func main() {
+	var (
+		numPix  int
+		exclude voc.Tags
+	)
+	flag.IntVar(&numPix , "pixels", 100*100, "Rough number of pixels in window")
+	flag.BoolVar(&exclude.Difficult, "exclude-difficult", false, "Exclude objects marked as difficult")
+	flag.BoolVar(&exclude.Occluded, "exclude-occluded", false, "Exclude objects marked as occluded")
+	flag.BoolVar(&exclude.Truncated, "exclude-truncated", false, "Exclude objects marked as truncated")
+
+	flag.Usage = usage
 	flag.Parse()
 	if flag.NArg() != 3 {
 		flag.Usage()
 		os.Exit(1)
 	}
 	var (
-		dir   = flag.Arg(0)
-		class = flag.Arg(1)
-		set   = flag.Arg(2)
+		dir        = flag.Arg(0)
+		classesStr = flag.Arg(1)
+		setsStr    = flag.Arg(2)
 	)
 
-	// Load list of images.
+	// Extract classes and sets.
+	classes := strings.Split(classesStr, ",")
+	sets := strings.Split(setsStr, ",")
+
+	for _, class := range classes {
+		for _, set := range sets {
+			log.Printf("sample: class %s, set %s", class, set)
+			sample(dir, class, set, numPix, exclude)
+		}
+	}
+}
+
+func sample(vocDir, class, set string, numPix int, exclude voc.Tags) {
+	outDir := class + "-" + set
+	// Create empty directory to write images to.
+	if err := os.RemoveAll(outDir); err != nil {
+		log.Fatalln("could not clear image dir:", err)
+	}
+	if err := os.Mkdir(outDir, 0755); err != nil {
+		log.Fatalln("could not create image dir:", err)
+	}
+
+	// Load images containing instances of class and corresponding annotations.
 	log.Println("load annotations")
-	imgset, err := voc.Load(dir, class, set)
+	imgset, err := voc.Load(vocDir, class, set)
 	if err != nil {
-		log.Fatalln("could not load list of images:", err)
+		log.Fatalln("could not load annotations:", err)
 	}
 
 	// Trim difficult, occluded or truncated examples.
 	var n int
-	imgset, n = removeDifficult(imgset)
+	imgset, n = removeDifficult(imgset, exclude)
 	log.Println("removed", n, "windows: difficult")
 
 	// Get image sizes.
 	log.Println("get size of images")
 	sizes := make(map[string]image.Point, len(imgset))
 	for name := range imgset {
-		conf, err := loadImageConfig(voc.ImageFile(dir, name))
+		conf, err := loadImageConfig(voc.ImageFile(vocDir, name))
 		if err != nil {
 			log.Fatalln("could not load image:", err)
 		}
@@ -80,8 +117,8 @@ func main() {
 	// Compute reference width and height.
 	// w h = A, w = a h, A = h^2 a, h = sqrt(A / a)
 	// w^2 / a = A, w = sqrt(A * a)
-	width := round(math.Sqrt(float64(numPixels) * aspect))
-	height := round(math.Sqrt(float64(numPixels) / aspect))
+	width := round(math.Sqrt(float64(numPix ) * aspect))
+	height := round(math.Sqrt(float64(numPix ) / aspect))
 	log.Printf("base size: %dx%d", width, height)
 
 	// Clone and resize the bounding boxes.
@@ -94,13 +131,15 @@ func main() {
 	log.Println("removed", n, "windows: too small")
 
 	log.Printf("sample and save images")
+	var imgFiles []string
 	// Extract windows from images.
-	for name, objs := range imgset {
+	for imgName, objs := range imgset {
 		// Load image from file.
-		img, err := loadImage(voc.ImageFile(dir, name))
+		img, err := loadImage(voc.ImageFile(vocDir, imgName))
 		if err != nil {
 			log.Fatalln("could not load image:", err)
 		}
+
 		var (
 			sub subImager
 			ok  bool
@@ -110,13 +149,21 @@ func main() {
 		}
 		for i, obj := range objs {
 			// Extract rectangle.
-			subimg := sub.SubImage(obj.Region)
+			subImg := sub.SubImage(obj.Region)
 			// Resize.
-			subimg = resize.Resize(uint(width), uint(height), subimg, resize.Bilinear)
-			if err := saveImage(subimg, fmt.Sprintf("%s_%d.png", name, i)); err != nil {
+			subImg = resize.Resize(uint(width), uint(height), subImg, resize.Bilinear)
+			imgFile := fmt.Sprintf("%s_%d.png", imgName, i)
+			if err := saveImage(subImg, path.Join(outDir, imgFile)); err != nil {
 				log.Println("could not save image:", err)
 			}
+			imgFiles = append(imgFiles, imgFile)
 		}
+	}
+
+	// Save list of images files.
+	listFile := class + "-" + set + ".txt"
+	if err := saveLines(imgFiles, listFile); err != nil {
+		log.Fatalln("could not save list of images:", err)
 	}
 }
 
@@ -244,21 +291,21 @@ func removeSmall(set map[string][]voc.Object, size image.Point) (map[string][]vo
 }
 
 // Filter.
-func removeDifficult(set map[string][]voc.Object) (map[string][]voc.Object, int) {
+func removeDifficult(set map[string][]voc.Object, exclude voc.Tags) (map[string][]voc.Object, int) {
 	dstSet := make(map[string][]voc.Object, len(set))
 	var removed int
 	for name, objs := range set {
 		var dstObjs []voc.Object
 		for _, obj := range objs {
-			if obj.Occluded != nil && *obj.Occluded {
+			if exclude.Occluded && obj.Occluded != nil && *obj.Occluded {
 				removed++
 				continue
 			}
-			if obj.Truncated != nil && *obj.Truncated {
+			if exclude.Truncated && obj.Truncated != nil && *obj.Truncated {
 				removed++
 				continue
 			}
-			if obj.Difficult != nil && *obj.Difficult {
+			if exclude.Difficult && obj.Difficult != nil && *obj.Difficult {
 				removed++
 				continue
 			}

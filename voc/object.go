@@ -11,7 +11,17 @@ import (
 type Object struct {
 	Class  string
 	Region image.Rectangle
-	// Optional flags.
+	// Extra options.
+	OptionalTags
+}
+
+type Tags struct {
+	Difficult bool
+	Occluded  bool
+	Truncated bool
+}
+
+type OptionalTags struct {
 	Difficult *bool
 	Occluded  *bool
 	Truncated *bool
@@ -57,9 +67,11 @@ func Objects(dir, img string) ([]Object, error) {
 		obj := Object{
 			raw.Name,
 			image.Rect(box.XMin, box.YMin, box.XMax, box.YMax),
-			intPtrToBool(raw.Difficult),
-			intPtrToBool(raw.Occluded),
-			intPtrToBool(raw.Truncated),
+			OptionalTags{
+				intPtrToBool(raw.Difficult),
+				intPtrToBool(raw.Occluded),
+				intPtrToBool(raw.Truncated),
+			},
 		}
 		objs[i] = obj
 	}
