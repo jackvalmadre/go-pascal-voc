@@ -3,39 +3,36 @@ package voc
 import (
 	"fmt"
 	"path"
+	"regexp"
 )
 
 // Loads list of all image names.
 //
 // Looks in <dir>/ImageSets/Main/<set>.txt.
-//
-// The class can be either a class name or "*".
 // The set can be either "train", "val" or "trainval".
-func Images(dir, class, set string) ([]string, error) {
-	var name string
-	if class == "*" {
-		name = set
-	} else {
-		name = class + "_" + set
-	}
-
-	lines, err := loadLines(path.Join(dir, "ImageSets", "Main", name+".txt"))
+func Images(dir, set string) ([]string, error) {
+	lines, err := loadLines(path.Join(dir, "ImageSets", "Main", set+".txt"))
 	if err != nil {
 		return nil, err
 	}
 
+	re := regexp.MustCompile(`^\d{4}_\d{6}\b`)
 	// Extract "name label" from every line.
 	for i, line := range lines {
-		var (
-			name  string
-			label int
-		)
-		if _, err := fmt.Sscanf(line, "%s %d", &name, &label); err != nil {
-			return nil, err
+		name := re.FindString(line)
+		if name == "" {
+			return nil, fmt.Errorf("could not match: %v", line)
 		}
 		lines[i] = name
 	}
 	return lines, nil
+}
+
+// Loads list of all image names.
+//
+// Looks in <dir>/ImageSets/Main/<class>_<set>.txt.
+func ImagesClass(dir, set, class string) ([]string, error) {
+	return Images(dir, class+"_"+set)
 }
 
 // Returns <dir>/JPEGImages/<img>.jpg.
