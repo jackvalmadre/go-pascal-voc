@@ -81,7 +81,7 @@ func sample(vocDir, class, set string, numPix int, exclude voc.Tags) {
 
 	// Load images containing instances of class and corresponding annotations.
 	log.Println("load annotations")
-	imgset, err := voc.Load(vocDir, class, set)
+	imgset, err := voc.LoadClass(vocDir, set, class)
 	if err != nil {
 		log.Fatalln("could not load annotations:", err)
 	}
